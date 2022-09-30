@@ -1,0 +1,207 @@
+load "lib/main/list-of"
+load "nat-less"
+define (int->nat n) :=
+  (check ((integer-numeral? n) 
+          (check ((n less? 1) zero)
+                 (else (S (int->nat (n minus 1))))))
+        (else n))
+
+define (nat->int n) :=
+  match n {
+    zero => 0
+  | (S k) => (plus (nat->int k) 1)
+  | _ => n
+  }
+ #(transform-output eval [nat->int])
+
+extend-module N {
+    declare Max: [N N] -> N
+
+    assert less2 := (forall ?x ?y . ?y < ?x ==> (Max ?x ?y) = ?x)
+    assert not-less2 := 
+        (forall ?x ?y . ~ (?y < ?x) ==> (Max ?x ?y) = ?y)
+    define commutative :=  (forall ?x ?y . (Max ?x ?y) = (Max ?y ?x))
+    define associative := 
+        (forall ?x ?y ?z . (Max (Max ?x ?y) ?z) = (Max ?x (Max ?y ?z)))
+
+    define idempotent := (forall ?x . (Max ?x ?x) = ?x)
+
+    assert [idempotent commutative associative]
+}
+
+
+module Untyped {
+    define [T F] := [true false]
+    datatype Term := true | false | zero
+                    | (if Term Term Term)
+                    | (succ Term)
+                    | (pred Term)
+                    | (iszero Term)
+
+
+    define [a b c d] := [?a:Term ?b:Term ?c:Term ?d:Term]
+    define [one + <= <] := [N.one N.+ N.<= N.<]
+    define lte-def := N.Less=.definition
+
+    define ++ := List.join
+    define len := List.length
+    define-sort TermSet := (List Term)
+    declare consts: [Term] -> TermSet
+    declare size: [Term] -> N
+    declare depth: [Term] -> N
+
+
+
+    transform-output size [nat->int]
+    transform-output eval [nat->int]
+    transform-output consts [(clist->alist id)]
+
+    assert* consts-def := [
+        ((consts true) = true::nil)
+        ((consts false) = false::nil)
+        ((consts zero) = zero :: nil)
+        (consts (if a b c) =  (consts a) ++ (consts b) ++ (consts c))
+        ((consts succ a) = (consts a))
+        ((consts pred a) = (consts a))
+        (consts (iszero a) = (consts a)) 
+    ]
+
+
+    assert*  size-def := [
+        ((size true) = one)
+        ((size false) = one)
+        ((size zero) = one)
+        ((size (succ a)) = (size a) + one)
+        ((size (pred a)) = (size a) + one)
+        ((size (iszero a)) = (size a) + one)
+        ((size (if a b c)) = (size a) + (size b) + (size c) + one)
+    
+    ]
+
+    assert* depth-def := [
+        ((depth true) = one)
+        ((depth false) = one)
+        ((depth zero) = one)
+        ((depth succ a) = (depth a) + one)
+        ((depth pred a) = (depth a) + one)
+        ((depth iszero a) = (depth a) + one)
+        ((depth (if a b c)) = (N.Max (N.Max (depth a) (depth b)) (depth c)))
+    ]
+    
+
+    (eval (size (succ (succ zero))))
+    
+    (println (sort-of (consts (succ (succ zero)))))
+    (eval (len (consts (succ (succ zero)))))
+
+}
+
+
+
+
+# Chapter 3; Example 3.3.3
+#   Lemma: The number of distinct constants in a term t is no greater than the
+#   size of t (i.e., |Consts(t)| ≤ size(t)).
+
+extend-module Untyped {
+    define consts-lte-size := (forall a . len (consts a) <= (size a))
+    define len-eq-size-for-const := method (cterm goal)
+        match goal {
+            ((some-quant q) (some-var v) body) =>
+                let {
+                    goal := try { 
+                            (replace-term-in-sentence ?a:Term body cterm)
+                            | body
+                        };
+                    len-c-eq-1 := (!chain-> [
+                        (len (consts cterm)) 
+                        = (len (cterm :: nil))
+                        = (S (len nil:(List Term))) 
+                        = (N.S N.zero) 
+                        = one
+                    ]);
+                    size-t-eq-1 := (!claim ((size cterm) = one));
+                    len-c-eq-size-t := (!chain [
+                        (len (consts cterm))   
+                        = one                      [len-c-eq-1]
+                        = (size cterm)              [size-t-eq-1]
+                    ])
+                }
+                (!chain-> [
+                    len-c-eq-size-t
+                    ==> (len (consts cterm) < (size cterm) | len-c-eq-size-t) 
+                                [method (p) (!right-either (len (consts cterm) < (size cterm)) p)]
+                    ==> (len (consts cterm) <= (size cterm)) [lte-def]
+                ])
+        }
+    # End len-eq-size-for-const
+     
+  
+    define len-lte-size-for-l1 := method (cterm)
+        match cterm {
+            ((some-symbol ctor) (some-var b)) =>    
+                let {   
+                        ih := ((len (consts b)) <= (size b));
+                        _ := (!claim ih);
+                        goal := ((len (consts (ctor b))) <= (size (ctor b)));
+                        len-succ-a-reduced := (!chain-> [
+                            (len (consts (ctor b)))
+                            = (len (consts b))          [((consts (ctor b)) = (consts b))]
+                        ]);
+                        
+                        size-succ-a := (!chain-> [
+                            (size (ctor b)) 
+                            = ((size b) + one)
+                            = ((size b) + (N.S N.zero))
+                            = (N.S ((size b) + N.zero))
+                            = (N.S (size b))
+                        ]);
+                        size-succ-gt-size := (!chain-> [
+                            T ==> ((size b) < (N.S (size b))) [N.Less.<S]
+                        ])
+                    }
+                    (!chain-> [
+                            T ==> (len (consts b) <= (size b))        [ih]
+                                ==> (len (consts (ctor b)) <= (size b)) [len-succ-a-reduced]
+                                ==> (len (consts (ctor b)) <= (N.S (size b))) [N.Less=.S2]
+                                ==> (len (consts (ctor b)) <= (size (ctor b))) [size-succ-a]
+                    ])
+        }
+
+    by-induction consts-lte-size {
+        true => (!len-eq-size-for-const true consts-lte-size)
+        | false => (!len-eq-size-for-const false consts-lte-size)
+        | zero => (!len-eq-size-for-const zero consts-lte-size)
+        | (succ a) => (!len-lte-size-for-l1 (succ a))
+        | (pred a) => (!len-lte-size-for-l1 (pred a))
+        | (iszero a) => (!len-lte-size-for-l1 (iszero a))
+        | (cond as (if a b c)) => (!force ((len (consts (if a b c))) <= (size (if a b c))))
+
+    }
+}
+
+
+
+extend-module Untyped {
+    module Semantics {
+        define [a' b' c'] := [?a':Term ?b':Term ?c':Term]
+        declare reduce: [Term] -> Term
+        assert* reduction-semantics := [
+            (reduce (iszero zero) = true)
+            (reduce (iszero (succ a)) = false)
+            (reduce true = true)
+            (reduce false = false)
+            (reduce (if true b c) = reduce b)
+            (reduce (if false b c) = reduce c)
+            #(reduce (if (if a' b' c') b c) = (reduce (if (reduce (if a' b' c')) b c)))
+            (forall a b c . (a =/= true & a =/= false) ==> (reduce (if a b c)) = (reduce (if (reduce a) b c)))
+
+        ]
+
+        
+        (eval (reduce (if (if true true false) false true))) # false
+        (eval (reduce (if true true false))) # true
+        (eval (reduce (if (iszero zero) true false))) # true
+    }
+}
+
