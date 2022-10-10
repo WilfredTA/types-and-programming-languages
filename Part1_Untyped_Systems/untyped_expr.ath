@@ -183,25 +183,78 @@ extend-module Untyped {
 
 
 extend-module Untyped {
+    # Evaluation relation: t -> t' means t evaluates to t' in one step
+    # If t is the state of the abstract machine at a given moment, then the machine can make *one* step (substitution/reduction)
+    # and change its state to t'.
+ 
     module Semantics {
-        define [a' b' c'] := [?a':Term ?b':Term ?c':Term]
+        define [a b c a' b' c'] := [?a:Term ?b:Term ?c:Term ?a':Term ?b':Term ?c':Term]
         declare reduce: [Term] -> Term
         assert* reduction-semantics := [
             (reduce (iszero zero) = true)
             (reduce (iszero (succ a)) = false)
             (reduce true = true)
             (reduce false = false)
+            
+            # E-IF_TRUE
             (reduce (if true b c) = reduce b)
+            # E-IF_FALSE
             (reduce (if false b c) = reduce c)
             #(reduce (if (if a' b' c') b c) = (reduce (if (reduce (if a' b' c')) b c)))
-            (forall a b c . (a =/= true & a =/= false) ==> (reduce (if a b c)) = (reduce (if (reduce a) b c)))
-
+            
+            # E-IF
+            ((a =/= true & a =/= false) ==> (reduce (if a b c)) = (reduce (if (reduce a) b c)))
         ]
 
+        define [reduce-iz-z reduce-iz-succ reduce-t reduce-f E-IF-T E-IF-F E-IF] := reduction-semantics
         
         (eval (reduce (if (if true true false) false true))) # false
         (eval (reduce (if true true false))) # true
         (eval (reduce (if (iszero zero) true false))) # true
+
+
+
+        ########### Evaluation Relation Formal Definition ###############
+        # An *instance* of an inference rule is obtained by consistently
+        # replacing each metavariable by the same term in the rule's conclusion and all its premises
+        # until it can no longer be reduced
+
+        # A rule is *satisfied* by a relation if, for each instance of the rule, either the conclusion is
+        # in the relation or one of the premises is not
+        # i.e., for some rule, forall terms, if the term is an instance of the rule then the instance itself is
+        # in the relation, OR one of the premises of the inference rule is NOT in the relation
+
+
+        # One step evaluation:
+        # Denoted by the symbol " -> "
+        # The smallest binary relation on terms satisfying all the inference rules.
+        # If (t, t') is in the evaluation relation, then the evaluation "statement" or "judgement" t -> t' is *derivable*
+
+
+        # The fact that an evaluation statement t -> t' is derivable if and only if there is a derivation
+        # tree with t -> t' as the label at its root helps us reason about properties of the eval relation
+        # This is done via a proof technique *induction on derivations*
+
+
+
+        # Example: Determinacy of One-Step Evaluation..
+        # I.e., if t -> t' and t -> t'' , then t' = t''
+
+        define determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
+
+        by-induction determinacy {
+            true => (!force (forall b c . ((reduce true) = b) & ((reduce true) = c) ==> b = c))
+          | false => (!force (forall b c . ((reduce false) = b) & ((reduce false) = c) ==> b = c))
+          | zero => (!force (forall b c . ((reduce zero) = b) & ((reduce zero) = c) ==> b = c))
+          | (b' as (succ a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+          | (b' as (pred a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+          | (b' as (iszero a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+          | (b' as (if a a' c')) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+        
+        }
+        
     }
 }
 
+
+#
