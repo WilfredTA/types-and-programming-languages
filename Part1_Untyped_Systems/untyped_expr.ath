@@ -1,5 +1,7 @@
 load "lib/main/list-of"
 load "nat-less"
+
+load "lib/basic/prolog.ath"
 define (int->nat n) :=
   (check ((integer-numeral? n) 
           (check ((n less? 1) zero)
@@ -188,7 +190,7 @@ extend-module Untyped {
     # and change its state to t'.
  
     module Semantics {
-        define [a b c a' b' c'] := [?a:Term ?b:Term ?c:Term ?a':Term ?b':Term ?c':Term]
+        define [a b c a' b' c' x y x' y'] := [?a:Term ?b:Term ?c:Term ?a':Term ?b':Term ?c':Term ?x:Term ?y:Term ?x':Term ?y':Term]
         declare reduce: [Term] -> Term
         assert* reduction-semantics := [
             (reduce (iszero zero) = true)
@@ -230,31 +232,126 @@ extend-module Untyped {
         # The smallest binary relation on terms satisfying all the inference rules.
         # If (t, t') is in the evaluation relation, then the evaluation "statement" or "judgement" t -> t' is *derivable*
 
-
-        # The fact that an evaluation statement t -> t' is derivable if and only if there is a derivation
-        # tree with t -> t' as the label at its root helps us reason about properties of the eval relation
-        # This is done via a proof technique *induction on derivations*
-
-
-
-        # Example: Determinacy of One-Step Evaluation..
-        # I.e., if t -> t' and t -> t'' , then t' = t''
-
-        define determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
-
-        by-induction determinacy {
-            true => (!force (forall b c . ((reduce true) = b) & ((reduce true) = c) ==> b = c))
-          | false => (!force (forall b c . ((reduce false) = b) & ((reduce false) = c) ==> b = c))
-          | zero => (!force (forall b c . ((reduce zero) = b) & ((reduce zero) = c) ==> b = c))
-          | (b' as (succ a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
-          | (b' as (pred a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
-          | (b' as (iszero a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
-          | (b' as (if a a' c')) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+       
         
-        }
-        
+      
     }
 }
 
+
+################## Induction on Derivations ##################
+
+# The fact that an evaluation statement t -> t' is derivable if and only if there is a derivation
+# tree with t -> t' as the label at its root helps us reason about properties of the eval relation
+# This is done via a proof technique *induction on derivations*
+
+
+
+# Example: Determinacy of One-Step Evaluation..
+# I.e., if t -> t' and t -> t'' , then t' = t''
+# From Ch3, Theorem 3.5.4 of Types and Programming Languages by Benjamin Pierce
+
+extend-module Untyped {
+    extend-module Semantics {
+
+        module InferenceSystem {
+            datatype Judgement := (yields Term Term)
+
+
+            datatype Proof := red-true-axiom
+                              | red-false-axiom
+                              | iszero-zero-axiom
+                              | iszero-succ-axiom
+                              | (e-if-true-rule Proof)
+                              | (e-if-false-rule Proof)
+                              | (e-if-rule Proof Proof)
+
+
+
+
+     
+
+            declare derives: [Proof Judgement] -> Boolean
+            declare provable: [Judgement] -> Boolean
+            define -->> := yields
+            define |- := derives
+
+
+
+            define [proof proof' proof1 proof2 p p' p1 p1' p2 p2' p3 p4] := 
+            [
+                ?proof:Proof ?proof':Proof ?proof1:Proof ?proof2:Proof ?p:Proof ?p':Proof
+                ?p1:Proof ?p1':Proof ?p2:Proof ?p2':Proof ?p3:Proof ?p4:Proof
+            ]
+
+            define [judgement j j' j1 j2] := 
+            [
+                ?judgement:Judgement ?j:Judgement ?j':Judgement ?j1:Judgement ?j2:Judgement
+            ]
+
+
+
+            assert* provable-def := (provable judgement <==> exists proof . proof |- judgement)
+
+            assert* reduce-true-semantics := (red-true-axiom |- a -->> a' <==> a = a' & a = true)
+            assert* reduce-false-semantics := (red-false-axiom |- a -->> a' <==> a = a' & a = false)
+            assert* iszero-zero-semantics := (iszero-zero-axiom |- a -->> a' <==> a' = true & a = zero)
+            assert* iszero-succ-semantics := (iszero-succ-axiom |- a -->> a' <==> a =/= zero & a' = false)
+            assert* e-if-true-semantics := (e-if-true-rule p |- a -->> a' <==>
+                                                (a = (if true b c) & p |- b -->> a')
+                                            )
+            assert* e-if-false-semantics := 
+                (e-if-false-rule p |- a -->> a' <==> (a = (if false b c) & p |- c -->> a'))
+
+            assert* e-if-semantics := (
+                (e-if-rule p p') |- a -->> a' <==> (exists x . (a = (if b c y) & (p |- a -->> x) & (p' |- x -->> a')))
+            )
+
+         
+
+            # Axioms of no junk, no confusion. See here for a nice discussion https://mathoverflow.net/questions/16180/formalizing-no-junk-no-confusion
+            assert free-generation-axioms := (
+                join (datatype-axioms "Proof")
+                     (datatype-axioms "Judgement")
+                     (datatype-axioms "Term")
+            )
+
+            define semantics := (join [provable-def reduce-true-semantics reduce-false-semantics iszero-zero-semantics iszero-succ-semantics 
+                    e-if-true-semantics e-if-false-semantics e-if-semantics
+            
+            ] free-generation-axioms)
+            
+            
+        }
+        open InferenceSystem
+
+
+        define determinacy := (forall a b c proof1 proof2 . ((proof1 |- a -->> b) & (proof2 |- a -->> c)) ==> b = c)
+
+        # Sanity check: Use automated theorem proving to derive goal
+        #(!prove F (ab))
+        (!prove determinacy semantics)
+       
+        
+        # define determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
+
+
+        # by-induction determinacy {
+        #     true => (!force (forall b c . ((reduce true) = b) & ((reduce true) = c) ==> b = c))
+        #     | false => (!force (forall b c . ((reduce false) = b) & ((reduce false) = c) ==> b = c))
+        #     | zero => (!force (forall b c . ((reduce zero) = b) & ((reduce zero) = c) ==> b = c))
+        #     | (b' as (succ a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+        #     | (b' as (pred a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+        #     | (b' as (iszero a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+        #     | (b' as (if a a' c')) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
+            
+        #     }
+
+    }
+}
+
+
+
+ 
 
 #
