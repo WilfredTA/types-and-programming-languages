@@ -1,6 +1,6 @@
 load "lib/main/list-of"
 load "nat-less"
-
+load "lib/basic/prolog.ath"
 
 define (int->nat n) :=
   (check ((integer-numeral? n) 
@@ -33,8 +33,8 @@ extend-module N {
 
 
 module Untyped {
-    define [T F] := [true false]
-    datatype Term := true | false
+
+    datatype Term := T | F
                     | (if Term Term Term)
 
 
@@ -56,42 +56,24 @@ module Untyped {
     transform-output consts [(clist->alist id)]
 
     assert* consts-def := [
-        ((consts true) = true::nil)
-        ((consts false) = false::nil)
-        #((consts zero) = zero :: nil)
+        ((consts T) = T::nil)
+        ((consts F) = F::nil)
         (consts (if a b c) =  (consts a) ++ (consts b) ++ (consts c))
-        #((consts succ a) = (consts a))
-        #((consts pred a) = (consts a))
-        #(consts (iszero a) = (consts a)) 
     ]
 
 
     assert*  size-def := [
-        ((size true) = one)
-        ((size false) = one)
-        # ((size zero) = one)
-        # ((size (succ a)) = (size a) + one)
-        # ((size (pred a)) = (size a) + one)
-        # ((size (iszero a)) = (size a) + one)
+        ((size T) = one)
+        ((size F) = one)
         ((size (if a b c)) = (size a) + (size b) + (size c) + one)
     
     ]
 
     assert* depth-def := [
-        ((depth true) = one)
-        ((depth false) = one)
-        # ((depth zero) = one)
-        # ((depth succ a) = (depth a) + one)
-        # ((depth pred a) = (depth a) + one)
-        # ((depth iszero a) = (depth a) + one)
+        ((depth T) = one)
+        ((depth F) = one)
         ((depth (if a b c)) = (N.Max (N.Max (depth a) (depth b)) (depth c)))
     ]
-    
-
-    #(eval (size (succ (succ zero))))
-    
-    #(println (sort-of (consts (succ (succ zero)))))
-    #(eval (len (consts (succ (succ zero)))))
 
 }
 
@@ -168,12 +150,8 @@ extend-module Untyped {
         }
 
     by-induction consts-lte-size {
-        true => (!len-eq-size-for-const true consts-lte-size)
-        | false => (!len-eq-size-for-const false consts-lte-size)
-        # | zero => (!len-eq-size-for-const zero consts-lte-size)
-        # | (succ a) => (!len-lte-size-for-l1 (succ a))
-        # | (pred a) => (!len-lte-size-for-l1 (pred a))
-        # | (iszero a) => (!len-lte-size-for-l1 (iszero a))
+        T => (!len-eq-size-for-const T consts-lte-size)
+        | F => (!len-eq-size-for-const F consts-lte-size)
         | (cond as (if a b c)) => (!force ((len (consts (if a b c))) <= (size (if a b c))))
 
     }
@@ -190,26 +168,24 @@ extend-module Untyped {
         define [a b c a' b' c' x y x' y'] := [?a:Term ?b:Term ?c:Term ?a':Term ?b':Term ?c':Term ?x:Term ?y:Term ?x':Term ?y':Term]
         declare reduce: [Term] -> Term
         assert* reduction-semantics := [
-            # (reduce (iszero zero) = true)
-            # (reduce (iszero (succ a)) = false)
-            (reduce true = true)
-            (reduce false = false)
+            (reduce T = T)
+            (reduce F = F)
             
-            # E-IF_TRUE
-            (reduce (if true b c) = reduce b)
-            # E-IF_FALSE
-            (reduce (if false b c) = reduce c)
+            # E-IF_T
+            (reduce (if T b c) = reduce b)
+            # E-IF_F
+            (reduce (if F b c) = reduce c)
             #(reduce (if (if a' b' c') b c) = (reduce (if (reduce (if a' b' c')) b c)))
             
             # E-IF
-            ((a =/= true & a =/= false) ==> (reduce (if a b c)) = (reduce (if (reduce a) b c)))
+            ((a =/= T & a =/= F) ==> (reduce (if a b c)) = (reduce (if (reduce a) b c)))
         ]
 
         define [reduce-iz-z reduce-iz-succ reduce-t reduce-f E-IF-T E-IF-F E-IF] := reduction-semantics
         
-        (eval (reduce (if (if true true false) false true))) # false
-        (eval (reduce (if true true false))) # true
-        #(eval (reduce (if (iszero zero) true false))) # true
+        (eval (reduce (if (if T T F) F T))) # F
+        (eval (reduce (if T T F))) # T
+        #(eval (reduce (if (iszero zero) T F))) # T
 
 
 
@@ -259,11 +235,12 @@ extend-module Untyped {
             }
 
         module InferenceSystem {
+
             datatype Judgement := (yields Term Term)
-            datatype Proof := red-true-axiom
-                              | red-false-axiom
-                              | (e-if-true-rule Proof)
-                              | (e-if-false-rule Proof)
+            datatype Proof := T-axiom
+                              | F-axiom
+                              | e-if-T-rule
+                              | e-if-F-rule 
                               | (e-if-rule Proof)
 
             declare derives: [Proof Judgement] -> Boolean
@@ -291,41 +268,59 @@ extend-module Untyped {
 
 
             assert* provable-def := (provable judgement <==> exists proof . proof |- judgement)
-            assert* reduce-true-semantics := (red-true-axiom |- a -->> a' <==> a = a' & a = true)
-            assert* reduce-false-semantics := (red-false-axiom |- a -->> a' <==> a = a' & a = false)
+            assert* reduce-T-semantics := (T-axiom |- a -->> a' <==> a = a' & a = T)
+            assert* reduce-F-semantics := (F-axiom |- a -->> a' <==> a = a' & a = F)
             
-            assert e-if-true-semantics := (forall p a a' . e-if-true-rule p |- a -->> a' <==>
-                                         (exists b c . a = (if true b c) & p |- b -->> a')
+            assert e-if-T-semantics := (forall a a' . e-if-T-rule |- a -->> a' <==>
+                                         (exists b c . a = (if T b c) & a' = b)
                                    )
-            assert e-if-false-semantics := 
-                (forall p a a' . e-if-false-rule p |- a -->> a' <==> (exists b c . a = (if false b c) & p |- c -->> a'))
+            assert e-if-F-semantics := 
+                (forall a a' . e-if-F-rule |- a -->> a' <==> (exists b c . a = (if F b c) & a' = c))
 
 
             assert e-if-semantics := (forall p a a' .  (e-if-rule p) |- a -->> a' 
-                                        <==> (exists x x' y y' b b' p' . 
-                                            p = (e-if-rule p') & (p' |- b -->> b') & (a = (if b x y)) & (a' = (if b' x' y'))))
+                                        <==> (exists x x' y y' . a = (if x y y') & a' = (if x' y y') & (p |- x -->> x'))
+            )
          
-            define determinacy := (forall proof1 proof2 a b c . ((proof1 |- a -->> b) & (proof2 |- a -->> c)) ==> b = c)
           
-            define semantics := (join [provable-def reduce-true-semantics reduce-false-semantics 
-                     e-if-true-semantics 
-                     e-if-false-semantics 
+          
+            define semantics := (join [provable-def reduce-T-semantics reduce-F-semantics 
+                     e-if-T-semantics 
+                     e-if-F-semantics 
                      e-if-semantics
             
             ])
 
             define full-semantics := (join semantics free-generation-axioms)
             
-            (inconsistent-axioms? full-semantics)
-            #(falsify determinacy 10)
+            define (determinacy p) := (forall p' a b c . p |- a -->> b & p' |- a -->> c ==> b = c)
+            
+            by-induction (forall p . determinacy p) {
+                T-axiom => (!force (determinacy T-axiom))
+                | F-axiom => (!force (determinacy F-axiom))
+                | e-if-T-rule => (!force (determinacy e-if-T-rule))
+                | e-if-F-rule => (!force (determinacy e-if-F-rule))
+                | (proof as (e-if-rule proof')) => (!force (determinacy proof))
+            }
+
+
+        }
+
+        module SemanticTests {
+            open InferenceSystem
+
+
+            (Prolog.auto-solve (e-if-T-rule |- (if _ _ _) -->> a))
+            (Prolog.auto-solve (e-if-rule ?P |- (if _ _ _) -->> a))
+            (Prolog.auto-solve (e-if-rule ?P |- (if (if _ _ _) _ _) -->> a))
         }
         
         # define determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
 
         # (!prove determinacy (filter (ab) assertion?))
         # by-induction determinacy {
-        #     true => (!force (forall b c . ((reduce true) = b) & ((reduce true) = c) ==> b = c))
-        #     | false => (!force (forall b c . ((reduce false) = b) & ((reduce false) = c) ==> b = c))
+        #     T => (!force (forall b c . ((reduce T) = b) & ((reduce T) = c) ==> b = c))
+        #     | F => (!force (forall b c . ((reduce F) = b) & ((reduce F) = c) ==> b = c))
         #     | zero => (!force (forall b c . ((reduce zero) = b) & ((reduce zero) = c) ==> b = c))
         #     | (b' as (succ a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
         #     | (b' as (pred a)) => (!force (forall b c . ((reduce b') = b) & ((reduce b') = c) ==> b = c))
