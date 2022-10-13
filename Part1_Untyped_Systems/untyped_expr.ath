@@ -220,7 +220,7 @@ extend-module Untyped {
 
 
 
-# Example: Determinacy of One-Step Evaluation..
+# Example: one-step-determinacy of One-Step Evaluation..
 # I.e., if t -> t' and t -> t'' , then t' = t''
 # From Ch3, Theorem 3.5.4 of Types and Programming Languages by Benjamin Pierce
 
@@ -293,14 +293,19 @@ extend-module Untyped {
 
             define full-semantics := (join semantics free-generation-axioms)
             
-            define (determinacy p) := (forall p' a b c . p |- a -->> b & p' |- a -->> c ==> b = c)
+            define (one-step-determinacy p) := (forall p' a b c . p |- a -->> b & p' |- a -->> c ==> b = c)
             
-            by-induction (forall p . determinacy p) {
-                T-axiom => (!force (determinacy T-axiom))
-                | F-axiom => (!force (determinacy F-axiom))
-                | e-if-T-rule => (!force (determinacy e-if-T-rule))
-                | e-if-F-rule => (!force (determinacy e-if-F-rule))
-                | (proof as (e-if-rule proof')) => (!force (determinacy proof))
+            by-induction (forall p . one-step-determinacy p) {
+                T-axiom => pick-any proof' a b c
+                                (!force (T-axiom |- a -->> b & proof' |- a -->> c ==> b = c))
+                | F-axiom => pick-any proof' a b c
+                                (!force (F-axiom |- a -->> b & proof' |- a -->> c ==> b = c))
+                | e-if-T-rule => pick-any proof' a b c
+                                (!force (e-if-T-rule |- a -->> b & proof' |- a -->> c ==> b = c))
+                | e-if-F-rule => pick-any proof' a b c
+                                (!force (e-if-F-rule |- a -->> b & proof' |- a -->> c ==> b = c))
+                | (proof as (e-if-rule proof')) => pick-any proof1 a b c
+                                (!force (e-if-rule proof' |- a -->> b & proof1 |- a -->> c ==> b = c))
             }
 
 
@@ -315,10 +320,10 @@ extend-module Untyped {
             (Prolog.auto-solve (e-if-rule ?P |- (if (if _ _ _) _ _) -->> a))
         }
         
-        # define determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
+        # define one-step-determinacy := (forall a b c . ((reduce a) = b) & ((reduce a) = c) ==> b = c)
 
-        # (!prove determinacy (filter (ab) assertion?))
-        # by-induction determinacy {
+        # (!prove one-step-determinacy (filter (ab) assertion?))
+        # by-induction one-step-determinacy {
         #     T => (!force (forall b c . ((reduce T) = b) & ((reduce T) = c) ==> b = c))
         #     | F => (!force (forall b c . ((reduce F) = b) & ((reduce F) = c) ==> b = c))
         #     | zero => (!force (forall b c . ((reduce zero) = b) & ((reduce zero) = c) ==> b = c))
